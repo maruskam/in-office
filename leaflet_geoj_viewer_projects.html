@@ -1,0 +1,123 @@
+<!-- visualizzo sulla mappa dati geojson
+query db 
+select json_build_object(
+    'type', 'FeatureCollection',
+    'features', json_agg(ST_AsGeoJSON(t.*)::json)
+    )
+from (select id, name, concat(name, ' ', type) as popupContent, ST_Transform(wkb_geometry::geometry, 4326) from ufficio_dump2
+     ) as t(id, name, popupContent, geom);
+-->
+<!doctype html>
+
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+
+  <title>The HTML5 Herald</title>
+  <meta name="description" content="The HTML5 Herald">
+  <meta name="author" content="SitePoint">
+    <style>
+        #mapid { height: 580px; background-color: azure;}
+    </style>
+    <script src="./scripts/jquery-3.6.0.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" 
+    integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A=="
+    crossorigin=""/>
+    <!-- Make sure you put this AFTER Leaflet's CSS -->
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"
+    integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA=="
+    crossorigin=""></script>
+
+
+</head>
+
+<body>
+    <div id="mapid"></div>
+    <script>
+       
+        
+        var map = L.map('mapid').setView([43.90133,12.85695], 22);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+        /*var myStyle = {
+            "color": "grey",
+            "weight": 5,
+            "opacity": 0.65,
+            fillColor: 'grey',
+            weight: 2,
+            opacity: 1,
+            color: 'white',  //Outline color
+            fillOpacity: 0.7
+        };*/
+        
+            
+        var featuresMap = [];
+        var mapResources;
+        
+        
+       
+      
+        function styleFeatures(feature){
+            if(feature.properties.sending_requests>0) return {color: "#ffff00"};
+               
+               switch (feature.properties.progress) {
+                   case  100: return {color: "#007700"};
+               }
+               switch (feature.properties.error) {
+                   case  true: return {color: "#FF0000"};
+                  
+               }
+        }
+        function onEachFeature(feature, layer) {
+            // does this feature have a property named popupContent?
+            if (feature.properties && feature.properties.id) {
+                layer.bindPopup(`${feature.properties.name} Progress: ${feature.properties.progress}% Done: ${feature.properties.done_requests} Sending: ${feature.properties.sending_requests} `);
+            }
+        }
+
+
+        function addFeature( current ){
+            mapResources.addData(current)
+        }
+        function updateFeature( current ){
+            removeFeature(current);
+            addFeature(current)        
+            
+        }
+        function removeFeature( current ){
+            var deletedFeature = featuresMap[current.properties.id];
+            mapResources.removeLayer(deletedFeature);
+        }
+
+        
+        function requestData(){
+            // request data to backend server
+            var jqxhr = $.ajax( "http://localhost:3000/project/list" )
+            .done(function( data ) {
+
+                featuresMap= data;
+                mapResources =  L.geoJSON(featuresMap, {
+                    onEachFeature: onEachFeature,
+                    style: styleFeatures
+                    }).addTo(map);
+                map.fitBounds(mapResources.getBounds())
+            })
+            .fail(function() {
+                alert( "error" );
+            })
+            .always(function() {
+                
+            });
+        }
+        
+ 
+      
+        
+        requestData()
+        /**/
+    </script>
+    
+</body>
+</html>
+
