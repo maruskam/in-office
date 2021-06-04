@@ -23,6 +23,14 @@ template html5
 
 1. preparare i dati vettoriali nel db
 2. mappa: visualizzazione layer esterno con simbolo su edificio + visualizzazione layer interno
+Stili di visualizzaione: 
+i desk non disponibili sono grigi 
+i desk occupati sono rossi
+i desk liberi sono verdi
+
+edificio --> internal --> world
+(un edificio può avere più internals e ad ogni internal è collegato un mondo, un world può essere collegato anche ad un oggetto del world)
+
 3. internals consultabile e navigabile
 4. gestione utenti
 5. tool per occupare room e desk con utenti
@@ -37,3 +45,14 @@ https://leaflet.github.io/Leaflet.draw/docs/examples/full.html
 
 
 Primo rilascio: punto 1,2,3 popolare il db con i dati di turnazione e gestire lo stile
+
+
+
+
+----------------------------------- query nel db per ottenere geoJson
+select json_build_object(
+    'type', 'FeatureCollection',
+    'features', json_agg(ST_AsGeoJSON(t.*)::json)
+    )
+from (select id, type, name, concat(name, ' ', type) as description, ST_Transform(geom::geometry, 4326) from ufficio_dump2
+     ) as t(id,  type, name,  description, geom);

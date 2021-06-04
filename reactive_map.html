@@ -1,0 +1,236 @@
+<!-- visualizzo sulla mappa dati geojson
+query db 
+select json_build_object(
+    'type', 'FeatureCollection',
+    'features', json_agg(ST_AsGeoJSON(t.*)::json)
+    )
+from (select id, name, concat(name, ' ', type) as popupContent, ST_Transform(wkb_geometry::geometry, 4326) from ufficio_dump2
+     ) as t(id, name, popupContent, geom);
+-->
+<!doctype html>
+
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+
+  <title>Reactive Map</title>
+  <meta name="description" content="reactive map">
+  <meta name="author" content="marumelu">
+    <style>
+        #mapid { height: 580px; background-color: azure;}
+    </style>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" 
+    integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A=="
+    crossorigin=""/>
+    <!-- Make sure you put this AFTER Leaflet's CSS -->
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"
+    integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA=="
+    crossorigin=""></script>
+
+
+</head>
+
+<body>
+    <div id="mapid"></div>
+    <div id="reactiveTableContainer"></div>
+
+    <script>
+        var map = L.map('mapid').setView([43.90133,12.85695], 22);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+        
+        
+        var featuresMap = [];
+        var mapResources;
+        var Filter = null;
+        var ReaT;
+            
+        
+        /** call this, passing new or updated resources, to trigger relative methods to react */
+        function updateResources( data ){
+            data.update.forEach(el => {
+                updateFeature(el)
+            })
+            data.insert.forEach(el => {
+                insertFeature(el)
+            })
+        }
+
+        /**
+         * Thematic map: different style for different features
+         * */
+        function styleFeatures(feature){
+            if(feature.properties.sending_requests>0) return {color: "#ffff00"};
+               
+               switch (feature.properties.progress) {
+                   case  100: return {color: "#007700"};
+               }
+               switch (feature.properties.error) {
+                   case  true: return {color: "#FF0000"};
+                  
+               }
+        }
+
+        /** view filter changes: it applies filter to map */
+        function setFilter(wich){
+            if(Filter!==wich){
+                map.removeLayer(mapResources);
+                Filter = wich;
+                viewResources(FeaturesMap, {centre:false})
+                
+            }
+        }
+
+        /**
+         * CUSTOM this may be a CUSTOM method, depending on app's context
+         * this method has benn passed to map and it's used to filter features 
+         * if returns true the feature is visible
+         * */
+        function filterFeatures(feature){
+            switch(Filter){
+                case 'error':
+                    return feature.properties.error
+                    break
+                default:
+                    return true
+            }
+        }
+
+
+        function onEachFeature(feature, layer) {
+            // does this feature have a property named popupContent?
+            if (feature.properties && feature.properties.id) {
+                layer.bindPopup(`Id: ${feature.properties.id} Name: ${feature.properties.name} Progress: ${feature.properties.progress}% Done: ${feature.properties.done_requests} Sending: ${feature.properties.sending_requests} `);
+            }
+        }
+
+        
+
+        function addFeature( current ){
+            mapResources.addData(current)
+        }
+        function updateFeature( current ){
+            removeFeature(current);
+            addFeature(current)        
+            
+        }
+        function removeFeature( current ){
+            var deletedFeature = FeaturesMap.find( el => el.properties.id === current.properties.id );
+            mapResources.removeLayer(deletedFeature);
+        }
+        
+        /**
+         * Add GeoJson data/layer to map */
+         function viewResources(data, opts = null ){
+            
+            mapResources =  L.geoJSON(FeaturesMap, {
+                    onEachFeature: onEachFeature,
+                    style: styleFeatures,
+                    filter: filterFeatures,
+                    }).addTo(map);
+            if(opts && opts.hasOwnProperty('centre') && opts.centre === true) map.fitBounds(mapResources.getBounds())
+        }
+
+
+
+        /************************************************************* WEBSOCKET */
+
+        var wsClient = new WebSocket("wss://localhost:8443");
+        wsClient.onopen = function (event) {
+            wsClient.send("getResources");
+        };
+
+        /** WS Server is calling the client *//
+        wsClient.onmessage = function (event) {
+            console.log(event.data);
+            // I suppose that data will be sent in json format
+            var response = JSON.parse(event.data)
+            
+            // -- event sendResources
+            if(response.msg === 'sendResources'){
+                FeaturesMap= response.data;
+                viewResources(FeaturesMap, {centre: true})
+                ReaT = new reactiveTable(FeaturesMap, $("#reactiveTableContainer"))
+            }
+             // -- event syncResources
+            if(response.msg === 'syncResources'){
+                updateResources(response.data)
+            }
+        }
+
+        /******************************************************** Reactive Table */
+        const reactiveTable = class reactiveTable{
+            constructor( data = null, parent ){
+                this.data = data;
+                this.innerHtml = '<table>';
+                this.table = $('<table>');
+                this.orderData();
+                this.fillRows();
+                this.addHeadRow();
+                parent.append(this.table)
+            }
+            /** Questo metodo rimane custom perchè dipende dai dati **/
+            orderData(){
+                function compareFn(a,b){
+                    if(a.properties.progress > b.properties.progress ){
+                        return -1                        
+                    }else{
+                        return 1
+                    }
+                   
+                }
+                 this.data.sort(compareFn)
+               
+            }
+
+            fillRows(){
+                this.data.forEach((el)=>{
+                    this.addRow(el.properties)
+                })
+            }
+            addHeadRow(){
+                var row = 
+                    `<tr>
+                        <td>Id</td>
+                        <td>Name</td>
+                        <td>Data richiesta</td>
+                        <td>Avanzamento</td>
+                        <td>Totali</td>
+                        <td>Eseguite</td>
+                        <td>In esecuzione</td>
+                        <td>Errore</td>
+                    </tr>`;
+                this.table.prepend(row)
+
+            }
+            addRow( data ){
+                var row = `<tr id="rt_row_${data.id}"></tr>`;
+                this.table.prepend(row)
+                updateRow(data.id, data)
+            }
+            updateRow(id, data){
+                var row = 
+                    `
+                    <td>${data.id}</td>
+                        <td>${data.name}</td>
+                        <td>Data richiesta</td>
+                        <td>${data.progress}</td>
+                        <td>${data.tot_requests}</td>
+                        <td>${data.done_requests}</td>
+                        <td>${data.sending_requests}</td>
+                        <td>${data.error}</td>
+                   `;
+                $("#rt_row_"+id)[0].innerHTML = row;
+            }
+            deleteRow(id){
+                $("#rt_row_"+id).remove()
+            }
+
+        }
+
+    </script>
+    
+</body>
+</html>
+

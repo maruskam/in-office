@@ -1,0 +1,26 @@
+<!doctype html>
+
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+
+  <title>The HTML5 Herald</title>
+  <meta name="description" content="The HTML5 Herald">
+  <meta name="author" content="SitePoint">
+
+ 
+    <script>
+        var wsClient = new WebSocket("wss://localhost:8443");
+        wsClient.onopen = function (event) {
+            wsClient.send("Here's some text that the server is urgently awaiting!");
+        };
+        wsClient.onmessage = function (event) {
+            alert(event.data);
+        }
+    </script>
+</head>
+
+<body>
+
+</body>
+</html>
